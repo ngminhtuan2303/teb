@@ -1,0 +1,384 @@
+variables:
+  RUNNER_TAG: rd_gitlab_runner
+  RUNNER_TAG_AKS: rd_runner
+  SHARED_REGISTRY: tvfrdsharedregistryacr.azurecr.io
+  AKS_RESOURCE_GROUP: tvf-rd-aks-cluster-rg
+  AKS_RESOURCE: tvf-rd-aks
+  PROJECT_NAME: ai-lab # Change this to your project name
+  SECRET_KEY: ${PROJECT_NAME}-secret
+  ARM_TENANT_ID_: ${ARM_TENANT_ID}
+  ARM_CLIENT_ID_: ${ARM_CLIENT_ID}
+  ARM_CLIENT_SECRET_: ${ARM_CLIENT_SECRET}
+  ARM_SUBSCRIPTION_ID_: ${ARM_SUBSCRIPTION_ID}
+  AZURE_AD_CLIENT_ID: ${APP_CLIENT_ID}
+  AZURE_AD_CLIENT_SECRET: ${APP_CLIENT_SECRET}
+  AZURE_AD_TENANT_ID: ${ARM_TENANT_ID_}
+  NEXTAUTH_SECRET: "6S/O3NU4UXpxXyIsxmTqEASV9NC1kGPSixqDvvNAigM="
+  API_DOMAIN: "${PROJECT_NAME}-api-${PROJECT_ENV}.talena.ai"
+  WEB_DOMAIN: "${PROJECT_NAME}-${PROJECT_ENV}.talena.ai"
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+      when: always
+      variables:
+        PIPELINE_NAME: CI
+        
+    - if: $CI_COMMIT_REF_NAME == 'main'
+      variables:
+        PIPELINE_NAME: CD
+        PROJECT_ENV: dev
+        DOCKER_IMAGE_TAG: ${CI_COMMIT_SHORT_SHA}-qa
+        LATEST_TAG: "dev"
+        API_DOMAIN: "${PROJECT_NAME}-api-${PROJECT_ENV}.talena.ai"
+        WEB_DOMAIN: "${PROJECT_NAME}-${PROJECT_ENV}.talena.ai"
+        AZURE_CONNECTION_STRING: $BLOB_URL_DEV
+    - if: $CI_COMMIT_REF_NAME == 'uat'
+      variables:
+        PIPELINE_NAME: CD
+        PROJECT_ENV: qa
+        DOCKER_IMAGE_TAG: ${CI_COMMIT_SHORT_SHA}
+        LATEST_TAG: "qa"
+        API_DOMAIN: "${PROJECT_NAME}-api-${PROJECT_ENV}.talena.ai"
+        WEB_DOMAIN: "${PROJECT_NAME}-${PROJECT_ENV}.talena.ai"
+        AZURE_CONNECTION_STRING: $BLOB_URL_QA
+    - if: $CI_COMMIT_TAG
+      variables:
+        PIPELINE_NAME: CD
+        PROJECT_ENV: prod
+        DOCKER_IMAGE_TAG: ${CI_COMMIT_TAG}
+        LATEST_TAG: "prod"
+        API_TOKEN: $PROD_DEPLOYMENT_TOKEN
+        API_DOMAIN: "${PROD_API_DOMAIN}"
+        WEB_DOMAIN: ${PROD_WEB_DOMAIN}
+        AZURE_CONNECTION_STRING: $BLOB_URL_PROD
+        SHARED_REGISTRY: $PROD_SHARED_REGISTRY
+        ARM_CLIENT_ID_: $PROD_ARM_CLIENT_ID
+        ARM_CLIENT_SECRET_: $PROD_ARM_CLIENT_SECRET
+        ARM_TENANT_ID_: $ARM_TENANT_ID
+        ARM_SUBSCRIPTION_ID_: $PROD_ARM_SUBSCRIPTION_ID
+        AKS_RESOURCE_GROUP: $PROD_AKS_RESOURCE_GROUP
+        AKS_RESOURCE: $PROD_AKS_RESOURCE
+    - when: never
+
+.api:
+  rules:
+    - if: $PIPELINE_NAME == "CD" && $PROJECT_ENV == "dev"
+      changes:
+        - "api/**/*"
+        - "build/api.Dockerfile"
+        - "build/api.base.Dockerfile"
+        - ".gitlab-ci.yml"
+    - if: $PIPELINE_NAME == "CD" && $PROJECT_ENV == "qa"
+      changes:
+        - "api/**/*"
+        - "build/api.Dockerfile"
+        - "build/api.base.Dockerfile"
+        - ".gitlab-ci.yml"
+    - if: $PROJECT_ENV == "prod"
+    - when: never
+
+.web:
+  rules:
+    - if: $PIPELINE_NAME == "CD" && $PROJECT_ENV == "dev"
+      changes:
+        - "web/**/*"
+        - "build/web.Dockerfile"
+        - ".gitlab-ci.yml"
+      variables:
+        BACKEND_API_URL: https://${API_DOMAIN}
+        NEXTAUTH_URL: https://${WEB_DOMAIN}
+        
+    - if: $PIPELINE_NAME == "CD" && $PROJECT_ENV == "qa"
+      changes:
+        - "web/**/*"
+        - ".gitlab-ci.yml"
+      variables:
+        BACKEND_API_URL: https://${API_DOMAIN}
+        NEXTAUTH_URL: https://${WEB_DOMAIN}
+    
+    - if: $PROJECT_ENV == "prod"
+      variables:
+        BACKEND_API_URL: https://${API_DOMAIN}
+        NEXTAUTH_URL: https://${WEB_DOMAIN}
+    - when: never
+    - when: never
+
+.ignore_ci_prod:
+  rules:
+    - if: $PROJECT_ENV != "prod"
+    - when: never
+
+default:
+  interruptible: true
+
+stages:
+  - echo-info
+  - qualitygate
+  - build-base
+  - ci
+  - build
+  - deploy
+
+.azure_cli_before_script: &azure_cli_before_script
+  - echo "Running pipeline for ${ARM_CLIENT_ID_} azure client id"
+  - echo "Running pipeline for ${ARM_CLIENT_SECRET_} azure client secret"
+  - echo "Running pipeline for ${ARM_TENANT_ID_} azure tenant id"
+  - az login --service-principal -u ${ARM_CLIENT_ID_} -p ${ARM_CLIENT_SECRET_} --tenant ${ARM_TENANT_ID_}
+  - az account set --subscription ${ARM_SUBSCRIPTION_ID_}
+
+echo-info:
+  stage: echo-info
+  script:
+    - echo "Running pipeline for ${PIPELINE_NAME} environment"
+    - echo "Running pipeline for ${PROJECT_ENV} environment"
+    - echo "Running pipeline for ${DOCKER_IMAGE_TAG} image tag"
+    - echo "Running pipeline for ${LATEST_TAG} latest tag"
+    - echo "Running pipeline for ${API_DOMAIN} api domain"
+    - echo "Running pipeline for ${WEB_DOMAIN} web domain"
+    - echo "Running pipeline for ${SHARED_REGISTRY} shared registry"
+    - echo "Running pipeline for ${ARM_CLIENT_ID_} azure client id"
+    - echo "Running pipeline for ${ARM_CLIENT_SECRET_} azure client secret"
+    - echo "Running pipeline for ${ARM_TENANT_ID_} azure tenant id"
+    - echo "Running pipeline for ${AZURE_CONNECTION_STRING} azure connection string"
+  rules:
+    - when: always
+  tags:
+    - "$RUNNER_TAG"
+
+sonarqube-web:
+  image:
+    name: sonarsource/sonar-scanner-cli:latest
+    entrypoint: [""]
+  stage: qualitygate
+  allow_failure: false
+  variables:
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar" #Define the location of the analysis task cache
+    GIT_DEPTH: "0" #Tells git to fetch all the branches of the project, required by the analysis task
+  script:
+    - |
+      cd web
+      sonar-scanner \
+      -Dsonar.qualitygate.wait=true \
+      -Dsonar.coverage.exclusions=**/* \
+      -Dsonar.cpd.exclusions=**/assets/fonts/* \
+      -Dsonar.projectKey=${CI_PROJECT_PATH_SLUG}-web \
+      -Dsonar.projectName=${CI_PROJECT_PATH_SLUG}-web \
+      -Dsonar.projectVersion=${CI_COMMIT_SHA:0:7} \
+      -DsourceEncoding=UTF-8
+  rules:
+    - if: $PROJECT_ENV != "prod" && ($PIPELINE_NAME == "CI" || $PIPELINE_NAME == "CD")
+      changes:
+        - "web/**/*"
+        - ".gitlab-ci.yml"
+    - when: never
+  cache:
+    key: "${CI_PROJECT_NAME}-sonarqube"
+    policy: pull-push
+    paths:
+      - "${SONAR_USER_HOME}/cache"
+  tags:
+    - "$RUNNER_TAG"
+
+sonarqube-api:
+  image:
+    name: sonarsource/sonar-scanner-cli:latest
+    entrypoint: [""]
+  stage: qualitygate
+  extends: .ignore_ci_prod
+  allow_failure: false
+  variables:
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar" #Define the location of the analysis task cache
+    GIT_DEPTH: "0" #Tells git to fetch all the branches of the project, required by the analysis task
+  script:
+    - |
+      cd api
+      sonar-scanner \
+      -Dsonar.qualitygate.wait=true \
+      -Dsonar.coverage.exclusions=**/* \
+      -Dsonar.projectKey=${CI_PROJECT_PATH_SLUG}-api \
+      -Dsonar.projectName=${CI_PROJECT_PATH_SLUG}-api \
+      -Dsonar.projectVersion=${CI_COMMIT_SHA:0:7} \
+      -DsourceEncoding=UTF-8
+  rules:
+    - if: $PROJECT_ENV != "prod" && ($PIPELINE_NAME == "CI" || $PIPELINE_NAME == "CD")
+      changes:
+        - "api/**/*"
+        - ".gitlab-ci.yml"
+        - "build/api.Dockerfile"
+        - "build/api.base.Dockerfile"
+    - when: never
+  cache:
+    key: "${CI_PROJECT_NAME}-sonarqube"
+    policy: pull-push
+    paths:
+      - "${SONAR_USER_HOME}/cache"
+  tags:
+    - "$RUNNER_TAG"
+
+lint-api:
+  image: ${SHARED_REGISTRY}/${PROJECT_NAME}/api:base
+  stage: ci
+  extends: .ignore_ci_prod
+  script:
+    - cd api
+    - python -m pylint cmd core internal tools 
+  allow_failure: false
+  rules:
+    - if: $PROJECT_ENV != "prod" && ($PIPELINE_NAME == "CI" || $PIPELINE_NAME == "CD")
+      changes:
+        - "api/**/*"
+        - "build/api.base.Dockerfile"
+        - "build/api.Dockerfile"
+        - ".gitlab-ci.yml"
+    - when: never
+  tags:
+    - $RUNNER_TAG_AKS
+
+lint-web:
+  image: node:20-alpine
+  stage: ci
+  extends: .ignore_ci_prod
+  script:
+    - cd web
+    - yarn install
+    - echo $AZURE_AD_CLIENT_ID
+    - echo $AZURE_AD_CLIENT_SECRET
+    - echo $AZURE_AD_TENANT_ID
+    - echo $NEXTAUTH_SECRET
+    - echo $BACKEND_API_URL
+    - echo $NEXTAUTH_URL
+    - yarn lint
+    - yarn build
+  allow_failure: false
+  cache:
+    key: $CI_COMMIT_REF_SLUG
+    paths:
+      - node_modules/
+  rules:
+    - if: $PROJECT_ENV != "prod" && ($PIPELINE_NAME == "CI" || $PIPELINE_NAME == "CD")
+      changes:
+        - "web/**/*"
+        - ".gitlab-ci.yml"
+      variables:
+        BACKEND_API_URL: https://${API_DOMAIN}
+        NEXTAUTH_URL: https://${WEB_DOMAIN}
+    - when: never
+  tags:
+    - $RUNNER_TAG
+
+build-api-base:
+  stage: build-base
+  image: mcr.microsoft.com/azure-cli
+  allow_failure: false
+  variables:
+    GIT_TERMINAL_PROMPT: 1
+    DOCKER_IMAGE_NAME: "${SHARED_REGISTRY}/${PROJECT_NAME}/api"
+  before_script:
+    - *azure_cli_before_script
+  script:
+    - |
+      echo "Build and push docker base image ${DOCKER_IMAGE_NAME}"
+      az acr build --build-arg COMMIT=${CI_COMMIT_SHORT_SHA} --file build/api.base.Dockerfile --image ${DOCKER_IMAGE_NAME}:base --registry ${SHARED_REGISTRY} .
+  rules:
+    - if: $PIPELINE_NAME == "CI"
+      changes:
+        - "api/requirements"
+        - "build/api.base.Dockerfile"
+    - if: $PROJECT_ENV == "prod"
+    - when: never
+  tags:
+    - $RUNNER_TAG
+
+build-api:
+  stage: build
+  extends: .api
+  image: mcr.microsoft.com/azure-cli
+  allow_failure: false
+  variables:
+    GIT_TERMINAL_PROMPT: 1
+    DOCKER_IMAGE_NAME: "${SHARED_REGISTRY}/${PROJECT_NAME}/api"
+  before_script:
+    - *azure_cli_before_script
+  script:
+    - |
+      echo "Build and push docker image ${DOCKER_IMAGE_NAME} from ${DOCKER_IMAGE_NAME}:base"
+      az acr build --build-arg COMMIT=${CI_COMMIT_SHORT_SHA} --file build/api.Dockerfile --build-arg BASE_IMAGE=${DOCKER_IMAGE_NAME}:base --image ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} --registry ${SHARED_REGISTRY} .
+  tags:
+    - $RUNNER_TAG
+
+build-web:
+  stage: build
+  extends: .web
+  image: mcr.microsoft.com/azure-cli
+  allow_failure: false
+  variables:
+    GIT_TERMINAL_PROMPT: 1
+    DOCKER_IMAGE_NAME: "${SHARED_REGISTRY}/${PROJECT_NAME}/web"
+  before_script:
+    - *azure_cli_before_script
+  script:
+    - |
+      echo "Build and push docker image ${DOCKER_IMAGE_NAME} from ${DOCKER_IMAGE_NAME}:base"
+      az acr build --build-arg COMMIT=${CI_COMMIT_SHORT_SHA} \
+      --build-arg NEXTAUTH_SECRET=$NEXTAUTH_SECRET \
+      --build-arg NEXTAUTH_URL=$NEXTAUTH_URL \
+      --build-arg BACKEND_API_URL=$BACKEND_API_URL \
+      --build-arg AZURE_AD_CLIENT_ID=$AZURE_AD_CLIENT_ID \
+      --build-arg AZURE_AD_CLIENT_SECRET=$AZURE_AD_CLIENT_SECRET \
+      --build-arg AZURE_AD_TENANT_ID=$AZURE_AD_TENANT_ID \
+      --file build/web.Dockerfile --image ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG} --registry ${SHARED_REGISTRY} .
+  tags:
+    - $RUNNER_TAG
+
+deploy-api:
+  image: weprovide/azure-cli-kubectl-kustomize
+  needs:
+    - job: build-api
+      artifacts: true
+      optional: false
+  stage: deploy
+  extends: .api
+  allow_failure: false
+  when: on_success
+  variables:
+    GIT_TERMINAL_PROMPT: 1
+    DOCKER_IMAGE_NAME: "${SHARED_REGISTRY}/${PROJECT_NAME}/api"
+    API_IMAGE_TAG: ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
+  before_script:
+    - *azure_cli_before_script
+  script:
+    - |
+      echo "Deploy API to ${AKS_RESOURCE_GROUP} / ${AKS_RESOURCE}"
+      apk add gettext
+      make -f build/Makefile deploy-api-manifest
+      az aks get-credentials --resource-group ${AKS_RESOURCE_GROUP} --name ${AKS_RESOURCE} --overwrite-existing
+      make -f build/Makefile deploy-api-apply
+  tags:
+    - $RUNNER_TAG
+
+deploy-web:
+  image: weprovide/azure-cli-kubectl-kustomize
+  needs:
+    - job: build-web
+      artifacts: true
+      optional: false
+  stage: deploy
+  extends: .web
+  allow_failure: false
+  when: on_success
+  variables:
+    GIT_TERMINAL_PROMPT: 1
+    DOCKER_IMAGE_NAME: "${SHARED_REGISTRY}/${PROJECT_NAME}/web"
+    WEB_IMAGE_TAG: ${DOCKER_IMAGE_NAME}:${DOCKER_IMAGE_TAG}
+  before_script:
+    - *azure_cli_before_script
+  script:
+    - |
+      echo "Deploy Web to ${AKS_RESOURCE_GROUP} / ${AKS_RESOURCE}"
+      apk add gettext
+      make -f build/Makefile deploy-web-manifest
+      az aks get-credentials --resource-group ${AKS_RESOURCE_GROUP} --name ${AKS_RESOURCE} --overwrite-existing
+      make -f build/Makefile deploy-web-apply
+  tags:
+    - $RUNNER_TAG

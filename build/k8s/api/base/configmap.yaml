@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ${PROJECT_NAME}-api-cfm
+  namespace: ${PROJECT_NAME}-${PROJECT_ENV}
+data:
+  DEPLOYMENT_ENV: ${PROJECT_ENV}
+  PROJECT_NAME: ${PROJECT_NAME}
+  SECRET_KEY: ${SECRET_KEY}
+  PG_URL: postgresql+asyncpg://postgres:${PG_PASSWORD}@pgbouncer:5432/${PROJECT_NAME}-${PROJECT_ENV}
+  REDIS_HOST: redis-master-0.redis-headless.${PROJECT_NAME}-${PROJECT_ENV}.svc.cluster.local
+  REDIS_PORT: "6379"
+  AZURE_CONTAINER: data
+  AZURE_CONNECTION_STRING: ${AZURE_CONNECTION_STRING}
