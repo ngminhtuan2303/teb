@@ -69,16 +69,16 @@ async def get_sport(sport_key: str, region: Optional[str]="us") -> SportResponse
         sport_key=item["sport_key"],
         sport_title=item["sport_title"],
         commence_time=item["commence_time"],
-        completed=item["completed"],
+        completed=item.get("completed", False),
         home_team=item["home_team"],
         away_team=item["away_team"],
-        scores=[Score(name=score["name"], score=score["score"]) for score in item["scores"]],
-        last_update=item["last_update"]
+        scores=[Score(name=score["name"], score=score["score"]) for score in item.get("scores", [])],
+        last_update=item.get("last_update","")
     ) for item in res]
 
 @app.get("/sports/{sport_key}/events/{event_id}/odds", response_model=List[OddsResponse])
 async def get_odds(sport_key: str, event_id: str, region: Optional[str]="us") -> List[OddsResponse]:
-    url = f"{BASE_URL}/v4/sports/{sport_key}/events/{event_id}odds"
+    url = f"{BASE_URL}/v4/sports/{sport_key}/events/{event_id}/odds"
     params = {
         "apiKey": API_KEY,
         "regions": region,

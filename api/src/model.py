@@ -29,8 +29,8 @@ class ScoresResponse(BaseModel):
     sport_title: str = Field(..., description="Title of the sport.")
     commence_time: str = Field(..., description="Start time of the event in ISO 8601 format.")
     completed: bool = Field(..., description="Indicates if the event has completed.")
-    home_team: str = Field(..., description="Name of the home team.")
-    away_team: str = Field(..., description="Name of the away team.")
+    home_team: Optional[str] = Field(None, description="Name of the home team.")
+    away_team: Optional[str] = Field(None, description="Name of the away team.")
     scores: List[Score] = Field(..., description="List of scores for the teams.")
     last_update: str = Field(..., description="Last update time of the odds in ISO 8601 format.")
 
