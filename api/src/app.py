@@ -50,7 +50,7 @@ async def get_sports(
     return data.values()
 
 @app.get("/sports/{sport_key}", response_model=List[ScoresResponse])
-async def get_sport(sport_key: str, region: Optional[str]="us") -> SportResponse:
+async def get_sport(sport_key: str, region: Optional[str]="us") -> List[SportResponse]:
     url = f"{BASE_URL}/v4/sports/{sport_key}/odds"
     params = {
         "apiKey": API_KEY,
@@ -76,8 +76,8 @@ async def get_sport(sport_key: str, region: Optional[str]="us") -> SportResponse
         last_update=item.get("last_update","")
     ) for item in res]
 
-@app.get("/sports/{sport_key}/events/{event_id}/odds", response_model=List[OddsResponse])
-async def get_odds(sport_key: str, event_id: str, region: Optional[str]="us") -> List[OddsResponse]:
+@app.get("/sports/{sport_key}/events/{event_id}/odds", response_model=OddsResponse)
+async def get_odds(sport_key: str, event_id: str, region: Optional[str]="us") -> OddsResponse:
     url = f"{BASE_URL}/v4/sports/{sport_key}/events/{event_id}/odds"
     params = {
         "apiKey": API_KEY,
@@ -85,12 +85,12 @@ async def get_odds(sport_key: str, event_id: str, region: Optional[str]="us") ->
     }
     response = requests.get(url, params=params)
     if response.status_code == 200:
-        res = response.json()
+        item = response.json()
     else:
         raise HTTPException(500, f"Error fetching data: {response.status_code} - {response.text}")
-    if not res:
+    if not item:
         raise HTTPException(404, detail="Odds not found for the specified event.")
-    return [OddsResponse(
+    return OddsResponse(
         id=item["id"],
         sport_key=item["sport_key"],
         sport_title=item["sport_title"],
@@ -109,10 +109,10 @@ async def get_odds(sport_key: str, event_id: str, region: Optional[str]="us") ->
                     point=outcome.get("point"),
                     h2h=outcome.get("h2h")
                 ) for outcome in market["outcomes"]],
-                link=market["link"],
-                sid=market["sid"]
+                link=market.get("link", ""),
+                sid=market.get("sid", "")
             ) for market in bookmaker["markets"]],
-            link=bookmaker["link"],
-            sid=bookmaker["sid"]
+            link=bookmaker.get("link", ""),
+            sid=bookmaker.get("sid", "")
         ) for bookmaker in item["bookmakers"]]
-    ) for item in res]
+    )
