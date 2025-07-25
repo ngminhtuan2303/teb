@@ -15,6 +15,9 @@ const nextConfig: NextConfig = {
       ["@swc-jotai/react-refresh", {}],
     ],
   },
+  images: {
+    domains: ["upload.wikimedia.org"],
+  },
 };
 
 export default withNextIntl(nextConfig);

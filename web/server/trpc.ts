@@ -98,12 +98,12 @@ export const publicProcedure = t.procedure;
 
 export const authedProcedure = t.procedure.use((opts) => {
   const { ctx } = opts;
-  const { access_token } = ctx;
-  // TODO: more stringent checks
-  if (!access_token?.length)
-    throw new TRPCError({
-      code: "UNAUTHORIZED",
-    });
+  // const { access_token } = ctx;
+  // // TODO: more stringent checks
+  // if (!access_token?.length)
+  //   throw new TRPCError({
+  //     code: "UNAUTHORIZED",
+  //   });
 
   // Infers the `session` as non-nullable
   return opts.next({ ctx });

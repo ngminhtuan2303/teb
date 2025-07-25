@@ -6,7 +6,7 @@ import { TRPCError } from "@trpc/server";
 import { getStatusKeyFromCode } from "@trpc/server/unstable-core-do-not-import";
 import curlOutput from "fetch-to-curl";
 
-export const baseUrl = env.BACKEND_API_URL + "/api/v1";
+export const baseUrl = env.BACKEND_API_URL;
 
 const options: Options = {
   prefixUrl: baseUrl,

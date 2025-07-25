@@ -17,8 +17,8 @@ export const env = createEnv({
     NEXTAUTH_SECRET: z.string(),
     NEXTAUTH_URL: z.string().url(),
 
-    GOOGLE_CLIENT_ID: z.string(),
-    GOOGLE_CLIENT_SECRET: z.string(),
+    GOOGLE_CLIENT_ID: z.string().optional().default("cccc"),
+    GOOGLE_CLIENT_SECRET: z.string().optional().default("yyyyy"),
   },
   client: {
     NEXT_PUBLIC_CICD_BUILD_PLATFORM: z

@@ -20,7 +20,7 @@ const images = [
 
 export function ImageSlider() {
   return (
-    <div className="overflow-hidden w-[80vw]">
+    <div className="overflow-hidden w-full">
       <Swiper
         modules={[Pagination, Autoplay, Navigation]}
         pagination={{ clickable: true }}
@@ -34,14 +34,14 @@ export function ImageSlider() {
       >
         {images.map(({ src, alt }, i) => (
           <SwiperSlide key={i}>
-            <div className="relative w-full h-[200px]">
+            <div className="relative w-full h-[250px]">
               {" "}
               {/* Hoặc 200px tuỳ độ cao ảnh bạn muốn */}
               <Image
                 src={src}
                 alt={alt}
                 fill
-                className="object-cover"
+                className="object-fill"
                 priority
               />
             </div>

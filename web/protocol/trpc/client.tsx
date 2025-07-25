@@ -67,7 +67,7 @@ export function TRPCProvider({ children }: Readonly<{ children: ReactNode }>) {
           }),
         }),
       ],
-    }),
+    })
   );
   return (
     <api.Provider client={trpcClient} queryClient={queryClient}>
